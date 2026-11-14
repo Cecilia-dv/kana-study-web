@@ -1,7 +1,7 @@
 (() => {
   const words = window.TEXTBOOK_WORDS;
   const kana = window.KANA;
-  const labels = {kr:'假名 → 罗马音', rk:'罗马音 → 假名', kk:'平假名 ↔ 片假名', wz:'日语原文 → 中文', kz:'假名 → 中文', hz:'日语汉字 → 中文', ar:'听写 · 听日语写假名', zw:'中文 → 日语', wr:'汉字 → 假名读音', az:'听发音 → 中文'};
+  const labels = {kr:'假名 → 罗马音', rk:'罗马音 → 假名', kk:'平假名 ↔ 片假名', wz:'日语原文 → 中文', kz:'假名 → 中文', hz:'日语汉字 → 中文', ar:'听写 · 听日语写假名', rkz:'假名读音 → 日语汉字', aj:'听发音 → 写日语', zw:'中文 → 日语', wr:'汉字 → 假名读音', az:'听发音 → 中文'};
   const normal = s => String(s).normalize('NFKC').toLowerCase().replace(/[\s\p{P}\p{S}]/gu,'');
   const japanese = s => normal(s).replace(/[ァ-ヶ]/g,c => String.fromCharCode(c.charCodeAt(0)-96));
   const split = s => s.split(/[・/／]/).map(x => x.trim()).filter(Boolean);
@@ -22,12 +22,12 @@
     return result;
   }
   function answer(item, dir) {
-    return ({kr: item.r && item.r[0],rk:item.ja,kk:item.other,wz:item.zh,kz:item.zh,hz:item.zh,az:item.zh,ar:item.reading && split(item.reading)[0],zw:item.ja,wr:item.reading})[dir];
+    return ({kr: item.r && item.r[0],rk:item.ja,kk:item.other,wz:item.zh,kz:item.zh,hz:item.zh,az:item.zh,ar:item.reading && split(item.reading)[0],zw:item.ja,rkz:item.ja,aj:item.ja,wr:item.reading})[dir];
   }
   function question(item, dir, pool) {
     const display = answer(item, dir);
     const normalize = ['zw','wr','ar'].includes(dir) ? japanese : normal;
-    const prompt = dir === 'rk' ? item.r[0] : dir === 'zw' ? item.zh : dir === 'az' ? '听音辨义' : dir === 'ar' ? '听完后写下假名' : dir === 'kz' ? item.reading : item.ja;
+    const prompt = dir === 'rk' ? item.r[0] : dir === 'zw' ? item.zh : dir === 'az' ? '听音辨义' : dir === 'ar' ? '听完后写下假名' : dir === 'aj' ? '听完后写下日语单词' : ['kz','rkz'].includes(dir) ? item.reading : item.ja;
     const matches = (a,b) => a.some(x => b.includes(x));
     const readings = word => [word.reading, ...split(word.reading)].map(japanese);
     const jaForms = word => [word.ja, ...split(word.reading), ...(variants[word.ja] || [])].map(japanese);
@@ -39,6 +39,12 @@
     if (dir === 'zw') {
       const related = /（[^）]+）/.test(item.zh) ? pool.filter(w => normal(w.zh) === normal(item.zh)) : pool.filter(w => !/（[^）]+）/.test(w.zh) && matches(meaning(item),meaning(w)));
       forms = [item,...related].flatMap(jaForms);
+    }
+    if (dir === 'rkz' || dir === 'aj') {
+      const source = dir === 'aj' ? w => split(w.reading).slice(0,1) : w => split(w.reading);
+      const heard = source(item).map(japanese);
+      const sameReading = pool.filter(w => matches(heard,source(w).map(japanese)));
+      forms = [item,...sameReading].map(w => normal(w.ja));
     }
     if (dir === 'ar') forms = [japanese(display)];
     if (dir === 'wz' || dir === 'hz') forms = [item,...pool.filter(w => japanese(w.ja) === japanese(item.ja))].flatMap(meaning);
@@ -63,7 +69,7 @@
       if (label && !options.some(x => normalize(x) === normalize(label))) options.push(label);
       if (options.length === 4) break;
     }
-    return {prompt, display, accepts, options: dir !== 'ar' && options.length === 4 ? shuffle(options) : [], audio: item.reading ? split(item.reading)[0] : item.ja};
+    return {prompt, display, accepts, options: !['ar','aj'].includes(dir) && options.length === 4 ? shuffle(options) : [], audio: item.reading ? split(item.reading)[0] : item.ja};
   }
   function csvParse(text) {
     const rows = [];
