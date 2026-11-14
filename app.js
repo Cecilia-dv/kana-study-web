@@ -4,17 +4,18 @@
   const $ = id => document.getElementById(id);
   const main = $('main');
   const key = 'kana-notebook-v1';
-  const fresh = () => ({version:1,theme:'',edits:{},removed:[],attempts:[],dismissed:{},round:null,prefs:{}});
+  const fresh = () => ({version:1,theme:'',sentences:[],rate:0.75,edits:{},removed:[],attempts:[],dismissed:{},round:null,prefs:{}});
   const own = (o,k) => Object.prototype.hasOwnProperty.call(o,k);
   const object = x => x && typeof x === 'object' && !Array.isArray(x);
   const itemValid = x => object(x) && ['id','ja','reading','zh','pos'].every(k => typeof x[k] === 'string') && x.ja.trim() && x.zh.trim() && Number.isSafeInteger(x.lesson) && x.lesson > 0 && /^[ぁ-ゖァ-ヺー・/／\s]+$/u.test(x.reading);
   function valid(d) {
     return object(d) && d.version === 1 && ['', 'light','dark'].includes(d.theme)
+      && (d.sentences===undefined || (Array.isArray(d.sentences) && d.sentences.every(s=>itemValid(s)&&typeof s.blank==='string'&&s.ja.includes(s.blank)&&typeof s.blankReading==='string'))) && (d.rate===undefined || [0.6,0.75,1].includes(d.rate))
       && object(d.edits) && Object.entries(d.edits).every(([id,w])=>itemValid(w) && id===w.id && /^(w|u)-/.test(id))
       && Array.isArray(d.removed) && d.removed.every(x=>typeof x==='string')
       && Array.isArray(d.attempts) && d.attempts.every(x=>object(x) && typeof x.key==='string' && typeof x.id==='string' && own(S.labels,x.dir) && typeof x.ok==='boolean' && Number.isFinite(x.time))
       && object(d.dismissed) && Object.values(d.dismissed).every(Number.isFinite) && object(d.prefs)
-      && (d.round===null || (object(d.round) && typeof d.round.id==='string' && ['kana','words','review'].includes(d.round.kind) && typeof d.round.done==='boolean' && Array.isArray(d.round.items) && d.round.items.length && Number.isInteger(d.round.index) && d.round.index>=0 && d.round.index<d.round.items.length && ['input','choice','card'].includes(d.round.mode) && d.round.items.every(q=>object(q)&&own(S.labels,q.dir)&&object(q.item)&&typeof q.item.id==='string'&& (q.item.script ? S.kana.some(k=>k.id===q.item.id) : itemValid(q.item)) && (q.options===undefined || (Array.isArray(q.options) && [0,4].includes(q.options.length) && q.options.every(x=>typeof x==='string'))) && (!q.result || ['correct','wrong','skip'].includes(q.result.status)))));
+      && (d.round===null || (object(d.round) && typeof d.round.id==='string' && ['kana','words','review'].includes(d.round.kind) && typeof d.round.done==='boolean' && Array.isArray(d.round.items) && d.round.items.length && Number.isInteger(d.round.index) && d.round.index>=0 && d.round.index<d.round.items.length && ['input','choice','card'].includes(d.round.mode) && d.round.items.every(q=>object(q)&&own(S.labels,q.dir)&&object(q.item)&&typeof q.item.id==='string'&& (q.item.script ? S.kana.some(k=>k.id===q.item.id) : itemValid(q.item)) && (q.mode===undefined || ['input','choice','card'].includes(q.mode)) && (q.options===undefined || (Array.isArray(q.options) && [0,4].includes(q.options.length) && q.options.every(x=>typeof x==='string'))) && (!q.result || ['correct','wrong','skip'].includes(q.result.status)))));
   }
   let state=fresh();
   function warn(message) {
@@ -48,6 +49,13 @@
   };
   const icon = name => '<svg class="icon" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round">'+icons[name]+'</svg>';
   const routes={home:'首页',kana:'假名',words:'单词',review:'错题本',stats:'学习统计'};
+  const sentences=()=>state.sentences||[];
+  const audioRate=()=>state.rate??0.75;
+  const groupsByLevel=[
+    ['初级 · 认读与听音',[['wz','看日文选中文（含假名与汉字）'],['az','听发音选中文'],['zw','看中文选日文']]],
+    ['中级 · 读音与拼写',[['convert','汉字 ↔ 假名互转'],['ar','听发音写假名']]],
+    ['高级 · 听写与句子',[['aj','听发音写完整日语词'],['sf','听句子填空'],['sd','听写整句']]]
+  ];
   const modes={input:'输入答案',choice:'四选一',card:'翻转卡片'};
   const a = (href,label,cls='') => '<a class="btn '+cls+'" href="#'+href+'">'+label+'</a>';
   const btn = (action,label,cls='',disabled=false) => '<button type="button" class="btn '+cls+'" data-act="'+esc(action)+'"'+(disabled?' disabled':'')+'>'+label+'</button>';
@@ -62,7 +70,7 @@
   }
   const lessons=()=>[...new Set([3,4,5,6,...words().map(w=>w.lesson)])].sort((a,b)=>a-b);
   function mistakes() {
-    const live = new Map([...S.kana,...words()].map(w=>[w.id,w]));
+    const live = new Map([...S.kana,...words(),...sentences()].map(w=>[w.id,w]));
     const entries = new Map();
     for (const record of state.attempts) {
       if (record.ok || !live.has(record.id) || record.time <= (state.dismissed[record.id] || 0)) continue;
@@ -95,17 +103,23 @@
   const field=(label,html)=>'<label><span class="field-label">'+label+'</span>'+html+'</label>';
   const checks=(name,labels,selected)=>'<div class="check-group">'+labels.map(v=>'<label class="check"><input type="checkbox" name="'+name+'" value="'+esc(v)+'"'+(selected.includes(v)?' checked':'')+'>'+esc(name==='lesson'?'第 '+v+' 课':v)+'</label>').join('')+'</div>';
   const countOptions={'5':'5 题','10':'10 题','15':'15 题','20':'20 题','30':'30 题','50':'50 题',all:'全部'};
+  function mixFields(p) {
+    const selected=Array.isArray(p.mix)?p.mix:['wz','az','zw'];
+    return groupsByLevel.map(([title,entries])=>'<fieldset><legend>'+title+'</legend><div class="check-group">'+entries.map(([id,label])=>'<label class="check"><input type="checkbox" name="mix" value="'+id+'"'+(selected.includes(id)?' checked':'')+'>'+label+'</label>').join('')+'</div></fieldset>').join('');
+  }
   function setup(kind) {
     const isKana=kind==='kana', p=state.prefs[kind] || {};
     const groups=['清音','浊音','半浊音','拗音'], scripts=['平假名','片假名'];
+    const practiceLessons=[...new Set([...lessons(),...sentences().map(s=>s.lesson)])].sort((a,b)=>a-b);
     const directions=isKana?['kr','rk','kk']:['wz','kz','hz','zw','wr','rkz','az','ar','aj'];
     return '<div class="narrow">'+pageHead(isKana?'かな · KANA':'ことば · VOCABULARY',isKana?'假名抽问':'单词抽问',isKana?'选择要练的文字、音类和答题方向。':'《新时代大学日语 1（学生用书）》')+
       '<form id="setup" class="panel setup" data-kind="'+kind+'">'+
-      (isKana?'<fieldset><legend>文字</legend>'+checks('script',scripts,Array.isArray(p.script)?p.script:scripts)+'</fieldset><fieldset><legend>音类</legend>'+checks('group',groups,Array.isArray(p.group)?p.group:groups)+'</fieldset>':'<fieldset><legend>课程</legend>'+checks('lesson',lessons().map(String),Array.isArray(p.lesson)?p.lesson:lessons().map(String))+'</fieldset>')+
-      '<div class="grid two">'+field('答题方向',select('dir',Object.fromEntries(directions.map(d=>[d,S.labels[d]])),p.dir))+field('答题模式',select('mode',modes,p.mode))+'</div>'+
+      (isKana?'<fieldset><legend>文字</legend>'+checks('script',scripts,Array.isArray(p.script)?p.script:scripts)+'</fieldset><fieldset><legend>音类</legend>'+checks('group',groups,Array.isArray(p.group)?p.group:groups)+'</fieldset>':'<fieldset><legend>课程</legend>'+checks('lesson',practiceLessons.map(String),Array.isArray(p.lesson)?p.lesson:practiceLessons.map(String))+'</fieldset>')+
+      (isKana?'':field('练习方式',select('practice',{mixed:'组合抽问',single:'单一题型'},p.practice||'mixed'))+'<div id="mix-settings" class="stack" hidden><p class="quiet">勾选想混练的题型。初级建议选 2–3 项，句子题使用你导入的例句。</p>'+mixFields(p)+'</div>')+
+      '<div class="grid two" id="single-settings">'+field('答题方向',select('dir',Object.fromEntries(directions.map(d=>[d,S.labels[d]])),p.dir))+field('答题模式',select('mode',modes,p.mode))+'</div>'+
       field('题目数量',select('count',countOptions,p.count||'10'))+
       '<div class="actions"><button class="btn primary" type="submit">开始抽问 '+icon('arrow')+'</button>'+
-      (state.round&&!state.round.done?a('quiz','继续未完成练习'):'')+(isKana?'':a('library','管理词库'))+'</div></form></div>';
+      (state.round&&!state.round.done?a('quiz','继续未完成练习'):'')+(isKana?'':a('library','管理词库'))+'</div></form>'+(isKana?'':sentencePanel())+'</div>';
   }
   function launch(kind,entries,mode,count,ordered=false) {
     if (!entries.length) return toast('当前范围没有可用题目。');
@@ -122,6 +136,24 @@
     const scope=isKana?['script','group']:['lesson'];
     scope.forEach(k=>p[k]=data.getAll(k));
     if (scope.some(k=>!p[k].length)) return toast('请至少选择一个练习范围。');
+    if (!isKana && p.practice==='mixed') {
+      p.mix=data.getAll('mix');
+      if(!p.mix.length)return toast('请至少勾选一种题型。');
+      const selected=words().filter(w=>p.lesson.includes(String(w.lesson)));
+      const kanji=selected.filter(w=>/[\p{Script=Han}]/u.test(w.ja));
+      const example=sentences().filter(w=>p.lesson.includes(String(w.lesson)));
+      const buckets=p.mix.flatMap(d=>d==='convert'?['wr','rkz']:[d]).map(dir=>{
+        const items=['sf','sd'].includes(dir)?example.filter(s=>dir!=='sf'||s.blank):['wr','rkz'].includes(dir)?kanji:selected;
+        return S.shuffle(items.map(item=>({item,dir,mode:['wz','az','zw'].includes(dir)?'choice':'input'})));
+      });
+      if ((p.mix.includes('sf')&&!example.some(s=>s.blank)) || (p.mix.includes('sd')&&!example.length)) return toast('请先为所选课次导入例句。填空题需要填写挖空词。');
+      const list=[];
+      while(buckets.some(b=>b.length)) {
+        for(const bucket of S.shuffle(buckets))if(bucket.length)list.push(bucket.pop());
+      }
+      state.prefs[kind]=p;
+      return launch(kind,list,'input',p.count,true);
+    }
     const items=isKana?S.kana.filter(k=>p.script.includes(k.script)&&p.group.includes(k.group)):
       words().filter(w=>p.lesson.includes(String(w.lesson))&&(!['wr','hz','ar','rkz'].includes(p.dir)||/[\p{Script=Han}]/u.test(w.ja)));
     state.prefs[kind]=p;
@@ -137,9 +169,10 @@
   }
   function audioControls(text) {
     const file=window.STUDY_AUDIO?.[text];
-    if (!file) return btn('speak',icon('sound')+' 使用设备语音','soft');
+    const speed=field('播放语速',select('audio-rate',{'0.6':'0.6× 更慢','0.75':'0.75× 慢速','1':'1× 原速'},audioRate()));
+    if (!file) return '<div class="audio-controls">'+speed+btn('speak',icon('sound')+' 播放设备语音','soft')+'</div>';
     const src='./audio/'+file+'.wav';
-    return '<div class="audio-controls"><audio id="quiz-audio" controls preload="metadata" aria-label="播放日语" src="'+src+'"></audio>'+
+    return '<div class="audio-controls">'+speed+'<audio id="quiz-audio" controls preload="metadata" aria-label="播放日语" src="'+src+'"></audio>'+
       '<div class="actions audio-alternatives"><a class="btn" href="'+src+'" target="_blank" rel="noopener">单独打开音频</a>'+
       btn('speak','使用设备语音')+'</div></div>';
   }
@@ -156,7 +189,7 @@
       if (!voice && voices.length) return speechStatus('此设备暂无可用的日语语音。请在系统语音设置中启用日语，或切换练习方向。');
       utterance=new SpeechSynthesisUtterance(text);
       utterance.lang='ja-JP';
-      utterance.rate=.88;
+      utterance.rate=audioRate()*.88;
       if(voice) utterance.voice=voice;
       utterance.onerror=e=>{if(!['canceled','interrupted'].includes(e.error)) speechStatus('日语语音播放失败。请检查设备的日语语音设置。');};
       speechSynthesis.cancel();
@@ -177,25 +210,27 @@
     const q=current();
     const nextQuestion=question(q);
     const result=q.result;
-    const dictation=['ar','aj'].includes(q.dir);
-    const mode=dictation?'input':r.mode, pending=!result||result.status==='skip';
+    const sentence=['sf','sd'].includes(q.dir);
+    const dictation=sentence||['ar','aj'].includes(q.dir);
+    const fixedMode=dictation||q.mode;
+    const mode=dictation?'input':q.mode||r.mode, pending=!result||result.status==='skip';
     activeQuestion=nextQuestion;
     if (mode==='choice' && (!q.options || (q.options.length && q.options.filter(nextQuestion.accepts).length!==1))) {q.options=nextQuestion.options; save();}
     const display=esc(nextQuestion.display), prompt=esc(nextQuestion.prompt);
-    const lang=['zw','az','ar','aj','rk'].includes(q.dir)?'':' lang="ja"';
+    const lang=['zw','az','ar','aj','sd','rk'].includes(q.dir)?'':' lang="ja"';
     const isCard=mode==='card'&&pending;
-    const prefix=q.item.script?q.item.script+' · '+q.item.group:'第 '+q.item.lesson+' 课';
-    const feedback=!pending?'<div class="feedback '+result.status+'" role="status"><b>'+(result.status==='correct'?'答对了':'加入错题本')+'</b><p>参考答案　<span '+(['wz','kz','hz','az'].includes(q.dir)?'':'lang="ja"')+'>'+display+'</span></p>'+(result.value?'<small>你的答案　'+esc(result.value)+'</small>':'')+(q.dir==='ar'?'<p>对应写法　<span lang="ja">'+esc(q.item.ja)+'</span></p>':!q.item.script&&q.dir!=='wr'?'<small lang="ja">　'+esc(q.item.reading)+'</small>':'')+'</div>':'';
+    const prefix=q.item.script?q.item.script+' · '+q.item.group:'第 '+q.item.lesson+' 课'+(sentence?' · 导入例句':'');
+    const feedback=!pending?'<div class="feedback '+result.status+'" role="status"><b>'+(result.status==='correct'?'答对了':'加入错题本')+'</b><p>参考答案　<span '+(['wz','kz','hz','az'].includes(q.dir)?'':'lang="ja"')+'>'+display+'</span></p>'+(result.value?'<small>你的答案　'+esc(result.value)+'</small>':'')+(sentence?'<p lang="ja">'+esc(q.item.ja)+'</p><p>'+esc(q.item.zh)+'</p>':q.dir==='ar'?'<p>对应写法　<span lang="ja">'+esc(q.item.ja)+'</span></p>':!q.item.script&&q.dir!=='wr'?'<small lang="ja">　'+esc(q.item.reading)+'</small>':'')+'</div>':'';
     const input='<form id="answer" class="answer-form"><input type="text" name="value" aria-label="输入答案" placeholder="输入答案" autocomplete="off" autocapitalize="off" spellcheck="false" required><button class="btn primary" type="submit">提交</button></form>';
     let body='';
     if(pending && !isCard) body=mode==='choice'&&q.options.length?'<div class="options">'+q.options.map((x,i)=>btn('pick:'+i,'<b>'+String.fromCharCode(65+i)+'</b>'+esc(x),'option')).join('')+'</div>':(mode==='choice'?'<p class="quiet">可用干扰项不足，请输入答案。</p>':'')+input;
     if(isCard) body=q.revealed?'<div class="actions"><span>'+btn('known','认识','primary')+'</span>'+btn('unknown','不认识')+'</div>':'';
-    const showSound=!pending||['az','ar','aj','rkz','kr','kk','wz','kz','hz'].includes(q.dir);
+    const showSound=!pending||['az','ar','aj','sf','sd','rkz','kr','kk','wz','kz','hz'].includes(q.dir);
     const title='<h2 class="prompt '+(q.dir==='zw'?'word-meaning':'')+'"'+lang+'>'+prompt+'</h2>';
     const face=isCard?'<button type="button" class="card-face" data-act="flip" aria-label="翻转卡片">'+
       '<span class="prompt" style="display:block"'+(q.revealed?(['az','wz','kz','hz'].includes(q.dir)?'':' lang="ja"'):lang)+'>'+(q.revealed?display:prompt)+'</span><small>'+(q.revealed?'参考答案 · 点击返回题目':'轻触查看答案')+'</small></button>':title;
     return '<div class="narrow"><div class="row quiz-meta"><div><div class="eyebrow">ただいま練習中</div><b>第 '+(r.index+1)+' / '+r.items.length+' 题</b></div>'+
-      (dictation?'<span class="quiet">'+(q.dir==='ar'?'输入假名':'输入日语写法')+'</span>':'<label><span class="quiet">答题模式</span> '+select('active-mode',modes,mode)+'</label>')+'</div>'+
+      (fixedMode?'<span class="quiet">'+modes[mode]+'</span>':'<label><span class="quiet">答题模式</span> '+select('active-mode',modes,mode)+'</label>')+'</div>'+
       meter(r.items.filter(x=>x.result&&x.result.status!=='skip').length,r.items.length)+
       '<section class="panel quiz-card"><span class="chip">'+prefix+'</span><p class="quiet">'+S.labels[q.dir]+'</p>'+face+
       (showSound?audioControls(nextQuestion.audio):'')+
@@ -277,6 +312,30 @@
     if(!itemValid(w)||w.lesson>999) throw Error('请填写日语、中文、1–999 的课次，以及有效的假名读音。');
     return w;
   }
+  function sentencePanel() {
+    return '<section class="panel stack"><h2>我的例句</h2><p class="quiet">已导入 '+sentences().length+' 句 · 使用 UTF-8 CSV，填写课次、日语句子、假名读音和中文。填空词及其读音可选。例句由设备日语语音朗读。</p><div class="actions">'+btn('sentence-import','导入例句 CSV','soft')+btn('sentence-template','下载 CSV 模板')+'</div><input id="sentence-file" type="file" accept=".csv,text/csv" hidden></section>';
+  }
+  async function importSentences(input) {
+    const file=input.files?.[0];
+    if(!file)return;
+    input.value='';
+    try {
+      const [header,...rows]=S.csvParse(await file.text());
+      const columns=(header||[]).map(h=>h.trim().toLowerCase());
+      if(!['lesson','ja','reading','zh'].every(k=>columns.includes(k))||!rows.length)throw Error('请使用例句 CSV 模板，并至少填写一条例句。');
+      const existing=new Set(sentences().map(s=>s.lesson+'|'+S.normal(s.ja)));
+      const added=[];
+      rows.forEach((row,i)=>{
+        const data=Object.fromEntries(columns.map((k,j)=>[k,(row[j]||'').trim()]));
+        const item={id:'s-'+uid(),ja:data.ja,reading:data.reading,zh:data.zh,lesson:Number(data.lesson),pos:'',blank:data.blank||'',blankReading:data.blankreading||''};
+        if(row.length!==columns.length||!itemValid(item)||item.lesson>999||(item.blank&&!item.ja.includes(item.blank))||(item.blankReading&&(!item.blank||!/^[ぁ-ゖァ-ヺー]+$/u.test(item.blankReading))))throw Error('第 '+(i+2)+' 行例句格式有误，请检查课次、读音及挖空词。');
+        const key=item.lesson+'|'+S.normal(item.ja);
+        if(!existing.has(key)){existing.add(key);added.push(item);}
+      });
+      state.sentences=[...sentences(),...added];
+      save();render();toast('已导入 '+added.length+' 句，跳过 '+(rows.length-added.length)+' 条重复例句。');
+    } catch(e) {toast(e.message||'例句文件读取失败。');}
+  }
   function saveWord(form) {
     try {
       const w=buildWord(Object.fromEntries(new FormData(form)),editing.id);
@@ -347,6 +406,8 @@
     main.innerHTML='<div class="view">'+content+'</div>';
     const player=$('quiz-audio');
     if (player) {
+      player.defaultPlaybackRate=audioRate();
+      player.playbackRate=audioRate();
       player.addEventListener('error',()=>speechStatus('音频加载失败。请试试「单独打开音频」或「使用设备语音」。'));
       player.addEventListener('playing',()=>speechStatus(''));
     }
@@ -356,9 +417,14 @@
   function syncSetupMode() {
     const form=$('setup');
     if (!form) return;
+    const mixed=form.elements.practice?.value==='mixed';
+    const section=$('mix-settings');
+    if(section)section.hidden=!mixed;
+    $('single-settings').hidden=mixed;
+    form.elements.dir.disabled=mixed;
     const dictation=['ar','aj'].includes(form.elements.dir.value);
     if (dictation) form.elements.mode.value='input';
-    form.elements.mode.disabled=dictation;
+    form.elements.mode.disabled=mixed||dictation;
   }
   window.addEventListener('hashchange',()=>{stopAudio();speechMessage='';render();window.scrollTo(0,0);});
   $('theme').addEventListener('click',()=>{state.theme=document.documentElement.dataset.theme==='dark'?'light':'dark';save();theme();});
@@ -366,8 +432,15 @@
     if(e.target.id==='word-search'){libraryQuery=e.target.value;$('word-list').innerHTML=wordList();}
   });
   main.addEventListener('change',e=>{
-    if(e.target.name==='dir')syncSetupMode();
+    if(['dir','practice'].includes(e.target.name))syncSetupMode();
     if(e.target.name==='active-mode'){state.round.mode=e.target.value;save();render();}
+    if(e.target.name==='audio-rate'){
+      state.rate=Number(e.target.value);
+      const player=$('quiz-audio');
+      if(player){player.defaultPlaybackRate=audioRate();player.playbackRate=audioRate();}
+      save();
+    }
+    if(e.target.id==='sentence-file')importSentences(e.target);
     if(['restore-file','csv-file'].includes(e.target.id))importFile(e.target);
   });
   let composing=false;
@@ -414,9 +487,11 @@
       const record=state.attempts.find(x=>x.key===r.id+'-'+r.index);
       if(record){record.ok=true;current().result.status='correct';save();render();}
     }
-    else if(act==='retry')launch('review',state.round.items.filter(q=>q.result?.status==='wrong').map(({item,dir})=>({item,dir})),state.round.mode,'all');
+    else if(act==='retry')launch('review',state.round.items.filter(q=>q.result?.status==='wrong').map(({item,dir,mode})=>({item,dir,mode})),state.round.mode,'all');
     else if(act.startsWith('master:')){state.dismissed[id]=Date.now();save();render();}
     else if(act==='backup')download('kana-notebook-backup.json',JSON.stringify(state,null,2),'application/json');
+    else if(act==='sentence-import')$('sentence-file').click();
+    else if(act==='sentence-template')download('例句导入模板.csv','\uFEFFlesson,ja,reading,zh,blank,blankReading\r\n','text/csv;charset=utf-8');
     else if(act==='restore')$('restore-file').click();
     else if(act==='csv-in')$('csv-file').click();
     else if(act==='csv-out'){

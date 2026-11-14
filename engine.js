@@ -1,7 +1,7 @@
 (() => {
   const words = window.TEXTBOOK_WORDS;
   const kana = window.KANA;
-  const labels = {kr:'假名 → 罗马音', rk:'罗马音 → 假名', kk:'平假名 ↔ 片假名', wz:'日语原文 → 中文', kz:'假名 → 中文', hz:'日语汉字 → 中文', ar:'听写 · 听日语写假名', rkz:'假名读音 → 日语汉字', aj:'听发音 → 写日语', zw:'中文 → 日语', wr:'汉字 → 假名读音', az:'听发音 → 中文'};
+  const labels = {kr:'假名 → 罗马音', rk:'罗马音 → 假名', kk:'平假名 ↔ 片假名', wz:'日语原文 → 中文', kz:'假名 → 中文', hz:'日语汉字 → 中文', ar:'听写 · 听日语写假名', rkz:'假名读音 → 日语汉字', aj:'听发音 → 写日语', zw:'中文 → 日语', wr:'汉字 → 假名读音', az:'听发音 → 中文', sf:'听句子填空', sd:'听写整句（可用假名）'};
   const normal = s => String(s).normalize('NFKC').toLowerCase().replace(/[\s\p{P}\p{S}]/gu,'');
   const japanese = s => normal(s).replace(/[ァ-ヶ]/g,c => String.fromCharCode(c.charCodeAt(0)-96));
   const split = s => s.split(/[・/／]/).map(x => x.trim()).filter(Boolean);
@@ -25,6 +25,12 @@
     return ({kr: item.r && item.r[0],rk:item.ja,kk:item.other,wz:item.zh,kz:item.zh,hz:item.zh,az:item.zh,ar:item.reading && split(item.reading)[0],zw:item.ja,rkz:item.ja,aj:item.ja,wr:item.reading})[dir];
   }
   function question(item, dir, pool) {
+    if (dir === 'sf' || dir === 'sd') {
+      const fill = dir === 'sf';
+      const display = fill ? item.blank : item.ja;
+      const forms = [display, fill ? item.blankReading : item.reading].filter(Boolean).map(japanese);
+      return {prompt:fill ? item.ja.replace(item.blank,'＿＿＿') : '听完后写出整句', display, accepts:value=>forms.includes(japanese(value)), options:[], audio:item.ja};
+    }
     const display = answer(item, dir);
     const normalize = ['zw','wr','ar'].includes(dir) ? japanese : normal;
     const prompt = dir === 'rk' ? item.r[0] : dir === 'zw' ? item.zh : dir === 'az' ? '听音辨义' : dir === 'ar' ? '听完后写下假名' : dir === 'aj' ? '听完后写下日语单词' : ['kz','rkz'].includes(dir) ? item.reading : item.ja;
