@@ -98,7 +98,7 @@
   function setup(kind) {
     const isKana=kind==='kana', p=state.prefs[kind] || {};
     const groups=['清音','浊音','半浊音','拗音'], scripts=['平假名','片假名'];
-    const directions=isKana?['kr','rk','kk']:['wz','zw','wr','az'];
+    const directions=isKana?['kr','rk','kk']:['wz','kz','hz','zw','wr','az','ar'];
     return '<div class="narrow">'+pageHead(isKana?'かな · KANA':'ことば · VOCABULARY',isKana?'假名抽问':'单词抽问',isKana?'选择要练的文字、音类和答题方向。':'《新时代大学日语 1（学生用书）》')+
       '<form id="setup" class="panel setup" data-kind="'+kind+'">'+
       (isKana?'<fieldset><legend>文字</legend>'+checks('script',scripts,Array.isArray(p.script)?p.script:scripts)+'</fieldset><fieldset><legend>音类</legend>'+checks('group',groups,Array.isArray(p.group)?p.group:groups)+'</fieldset>':'<fieldset><legend>课程</legend>'+checks('lesson',lessons().map(String),Array.isArray(p.lesson)?p.lesson:lessons().map(String))+'</fieldset>')+
@@ -123,9 +123,9 @@
     scope.forEach(k=>p[k]=data.getAll(k));
     if (scope.some(k=>!p[k].length)) return toast('请至少选择一个练习范围。');
     const items=isKana?S.kana.filter(k=>p.script.includes(k.script)&&p.group.includes(k.group)):
-      words().filter(w=>p.lesson.includes(String(w.lesson))&&(p.dir!=='wr'||/[\p{Script=Han}]/u.test(w.ja)));
+      words().filter(w=>p.lesson.includes(String(w.lesson))&&(!['wr','hz','ar'].includes(p.dir)||/[\p{Script=Han}]/u.test(w.ja)));
     state.prefs[kind]=p;
-    launch(kind,items.map(item=>({item,dir:p.dir})),p.mode,p.count);
+    launch(kind,items.map(item=>({item,dir:p.dir})),p.dir==='ar'?'input':p.mode,p.count);
   }
   const current=()=>state.round.items[state.round.index];
   const question=q=>S.question(q.item,q.dir,q.item.script?S.kana:[q.item,...words().filter(w=>w.id!==q.item.id)]);
@@ -135,13 +135,26 @@
     clearTimeout(toastTimer);
     toastTimer=setTimeout(()=>{$('toast').textContent='';},4000);
   }
+  let activeAudio;
   function speak(text) {
+    stopAudio();
+    const file=window.STUDY_AUDIO?.[text];
+    if (!file) return speakOnDevice(text);
+    const player=new Audio('./audio/'+file+'.wav');
+    activeAudio=player;
+    speechStatus('');
+    player.play().catch(()=>{
+      if(activeAudio===player) speechStatus('音频未能播放。请检查网络或媒体音量，再点一次播放。');
+    });
+  }
+  let utterance;
+  function speakOnDevice(text) {
     if (!('speechSynthesis' in window) || !('SpeechSynthesisUtterance' in window)) return speechStatus('此浏览器无法播放日语语音。');
     try {
       const voices=speechSynthesis.getVoices();
       const voice=voices.find(v=>/^ja(?:[-_]|$)/i.test(v.lang));
       if (!voice && voices.length) return speechStatus('此设备暂无可用的日语语音。请在系统语音设置中启用日语，或切换练习方向。');
-      const utterance=new SpeechSynthesisUtterance(text);
+      utterance=new SpeechSynthesisUtterance(text);
       utterance.lang='ja-JP';
       utterance.rate=.88;
       if(voice) utterance.voice=voice;
@@ -164,24 +177,25 @@
     const q=current();
     const nextQuestion=question(q);
     const result=q.result;
-    const mode=r.mode, pending=!result||result.status==='skip';
+    const dictation=q.dir==='ar';
+    const mode=dictation?'input':r.mode, pending=!result||result.status==='skip';
     activeQuestion=nextQuestion;
     if (mode==='choice' && (!q.options || (q.options.length && q.options.filter(nextQuestion.accepts).length!==1))) {q.options=nextQuestion.options; save();}
     const display=esc(nextQuestion.display), prompt=esc(nextQuestion.prompt);
-    const lang=q.dir==='zw'||q.dir==='az'||q.dir==='rk'?'':' lang="ja"';
+    const lang=['zw','az','ar','rk'].includes(q.dir)?'':' lang="ja"';
     const isCard=mode==='card'&&pending;
     const prefix=q.item.script?q.item.script+' · '+q.item.group:'第 '+q.item.lesson+' 课';
-    const feedback=!pending?'<div class="feedback '+result.status+'" role="status"><b>'+(result.status==='correct'?'答对了':'加入错题本')+'</b><p>参考答案　<span '+(q.dir==='wz'||q.dir==='az'?'':'lang="ja"')+'>'+display+'</span></p>'+(result.value?'<small>你的答案　'+esc(result.value)+'</small>':'')+(!q.item.script&&q.dir!=='wr'?'<small lang="ja">　'+esc(q.item.reading)+'</small>':'')+'</div>':'';
+    const feedback=!pending?'<div class="feedback '+result.status+'" role="status"><b>'+(result.status==='correct'?'答对了':'加入错题本')+'</b><p>参考答案　<span '+(['wz','kz','hz','az'].includes(q.dir)?'':'lang="ja"')+'>'+display+'</span></p>'+(result.value?'<small>你的答案　'+esc(result.value)+'</small>':'')+(dictation?'<p>对应写法　<span lang="ja">'+esc(q.item.ja)+'</span></p>':!q.item.script&&q.dir!=='wr'?'<small lang="ja">　'+esc(q.item.reading)+'</small>':'')+'</div>':'';
     const input='<form id="answer" class="answer-form"><input type="text" name="value" aria-label="输入答案" placeholder="输入答案" autocomplete="off" autocapitalize="off" spellcheck="false" required><button class="btn primary" type="submit">提交</button></form>';
     let body='';
     if(pending && !isCard) body=mode==='choice'&&q.options.length?'<div class="options">'+q.options.map((x,i)=>btn('pick:'+i,'<b>'+String.fromCharCode(65+i)+'</b>'+esc(x),'option')).join('')+'</div>':(mode==='choice'?'<p class="quiet">可用干扰项不足，请输入答案。</p>':'')+input;
     if(isCard) body=q.revealed?'<div class="actions"><span>'+btn('known','认识','primary')+'</span>'+btn('unknown','不认识')+'</div>':'';
-    const showSound=q.dir==='az'||!pending||['kr','kk','wz'].includes(q.dir);
+    const showSound=!pending||['az','ar','kr','kk','wz','kz','hz'].includes(q.dir);
     const title='<h2 class="prompt '+(q.dir==='zw'?'word-meaning':'')+'"'+lang+'>'+prompt+'</h2>';
     const face=isCard?'<button type="button" class="card-face" data-act="flip" aria-label="翻转卡片">'+
-      '<span class="prompt" style="display:block"'+(q.revealed?(q.dir==='az'||q.dir==='wz'?'':' lang="ja"'):lang)+'>'+(q.revealed?display:prompt)+'</span><small>'+(q.revealed?'参考答案 · 点击返回题目':'轻触查看答案')+'</small></button>':title;
+      '<span class="prompt" style="display:block"'+(q.revealed?(['az','wz','kz','hz'].includes(q.dir)?'':' lang="ja"'):lang)+'>'+(q.revealed?display:prompt)+'</span><small>'+(q.revealed?'参考答案 · 点击返回题目':'轻触查看答案')+'</small></button>':title;
     return '<div class="narrow"><div class="row quiz-meta"><div><div class="eyebrow">ただいま練習中</div><b>第 '+(r.index+1)+' / '+r.items.length+' 题</b></div>'+
-      '<label><span class="quiet">答题模式</span> '+select('active-mode',modes,mode)+'</label></div>'+
+      (dictation?'<span class="quiet">输入假名</span>':'<label><span class="quiet">答题模式</span> '+select('active-mode',modes,mode)+'</label>')+'</div>'+
       meter(r.items.filter(x=>x.result&&x.result.status!=='skip').length,r.items.length)+
       '<section class="panel quiz-card"><span class="chip">'+prefix+'</span><p class="quiet">'+S.labels[q.dir]+'</p>'+face+
       (showSound?btn('speak',icon('sound')+' 播放日语','soft'):'')+
@@ -197,13 +211,19 @@
     save(); render();
     main.querySelector('[data-act="next"]')?.focus({preventScroll:true});
   }
+  function stopAudio() {
+    if (activeAudio) { activeAudio.pause(); activeAudio=null; }
+    if (utterance && 'speechSynthesis' in window) { speechSynthesis.cancel(); utterance=null; }
+  }
   function step(offset) {
     const r=state.round;
     if(offset>0&&!current().result) current().result={status:'skip'};
     if(r.index+offset>=r.items.length) return finish();
+    stopAudio();
     r.index=Math.max(0,r.index+offset);speechMessage='';save();render();window.scrollTo(0,0);
   }
   function finish() {
+    stopAudio();
     state.round.done=true;save();render();
   }
   function results(r) {
@@ -325,13 +345,22 @@
     const content={home,kana:()=>setup('kana'),words:()=>setup('words'),quiz,review,stats,library}[p]();
     main.innerHTML='<div class="view">'+content+'</div>';
     theme();
+    syncSetupMode();
   }
-  window.addEventListener('hashchange',()=>{speechMessage='';render();window.scrollTo(0,0);});
+  function syncSetupMode() {
+    const form=$('setup');
+    if (!form) return;
+    const dictation=form.elements.dir.value==='ar';
+    if (dictation) form.elements.mode.value='input';
+    form.elements.mode.disabled=dictation;
+  }
+  window.addEventListener('hashchange',()=>{stopAudio();speechMessage='';render();window.scrollTo(0,0);});
   $('theme').addEventListener('click',()=>{state.theme=document.documentElement.dataset.theme==='dark'?'light':'dark';save();theme();});
   main.addEventListener('input',e=>{
     if(e.target.id==='word-search'){libraryQuery=e.target.value;$('word-list').innerHTML=wordList();}
   });
   main.addEventListener('change',e=>{
+    if(e.target.name==='dir')syncSetupMode();
     if(e.target.name==='active-mode'){state.round.mode=e.target.value;save();render();}
     if(['restore-file','csv-file'].includes(e.target.id))importFile(e.target);
   });

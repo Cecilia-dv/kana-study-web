@@ -1,7 +1,7 @@
 (() => {
   const words = window.TEXTBOOK_WORDS;
   const kana = window.KANA;
-  const labels = {kr:'假名 → 罗马音', rk:'罗马音 → 假名', kk:'平假名 ↔ 片假名', wz:'日语 → 中文', zw:'中文 → 日语', wr:'汉字 → 假名读音', az:'听发音 → 中文'};
+  const labels = {kr:'假名 → 罗马音', rk:'罗马音 → 假名', kk:'平假名 ↔ 片假名', wz:'日语原文 → 中文', kz:'假名 → 中文', hz:'日语汉字 → 中文', ar:'听写 · 听日语写假名', zw:'中文 → 日语', wr:'汉字 → 假名读音', az:'听发音 → 中文'};
   const normal = s => String(s).normalize('NFKC').toLowerCase().replace(/[\s\p{P}\p{S}]/gu,'');
   const japanese = s => normal(s).replace(/[ァ-ヶ]/g,c => String.fromCharCode(c.charCodeAt(0)-96));
   const split = s => s.split(/[・/／]/).map(x => x.trim()).filter(Boolean);
@@ -22,12 +22,12 @@
     return result;
   }
   function answer(item, dir) {
-    return ({kr: item.r && item.r[0],rk:item.ja,kk:item.other,wz:item.zh,az:item.zh,zw:item.ja,wr:item.reading})[dir];
+    return ({kr: item.r && item.r[0],rk:item.ja,kk:item.other,wz:item.zh,kz:item.zh,hz:item.zh,az:item.zh,ar:item.reading && split(item.reading)[0],zw:item.ja,wr:item.reading})[dir];
   }
   function question(item, dir, pool) {
     const display = answer(item, dir);
-    const normalize = dir === 'zw' || dir === 'wr' ? japanese : normal;
-    const prompt = dir === 'rk' ? item.r[0] : dir === 'zw' ? item.zh : dir === 'az' ? '听音辨义' : item.ja;
+    const normalize = ['zw','wr','ar'].includes(dir) ? japanese : normal;
+    const prompt = dir === 'rk' ? item.r[0] : dir === 'zw' ? item.zh : dir === 'az' ? '听音辨义' : dir === 'ar' ? '听完后写下假名' : dir === 'kz' ? item.reading : item.ja;
     const matches = (a,b) => a.some(x => b.includes(x));
     const readings = word => [word.reading, ...split(word.reading)].map(japanese);
     const jaForms = word => [word.ja, ...split(word.reading), ...(variants[word.ja] || [])].map(japanese);
@@ -40,12 +40,14 @@
       const related = /（[^）]+）/.test(item.zh) ? pool.filter(w => normal(w.zh) === normal(item.zh)) : pool.filter(w => !/（[^）]+）/.test(w.zh) && matches(meaning(item),meaning(w)));
       forms = [item,...related].flatMap(jaForms);
     }
-    if (dir === 'wz') forms = [item,...pool.filter(w => japanese(w.ja) === japanese(item.ja))].flatMap(meaning);
+    if (dir === 'ar') forms = [japanese(display)];
+    if (dir === 'wz' || dir === 'hz') forms = [item,...pool.filter(w => japanese(w.ja) === japanese(item.ja))].flatMap(meaning);
+    if (dir === 'kz') forms = [item,...pool.filter(w => japanese(w.reading) === japanese(item.reading))].flatMap(meaning);
     if (dir === 'az') forms = [item,...pool.filter(w => japanese(split(w.reading)[0]) === japanese(split(item.reading)[0]))].flatMap(meaning);
     const accepts = value => forms.includes(normalize(value));
     function distractor(other) {
       if (item.id === other.id || (item.script && item.script !== other.script)) return false;
-      if (dir === 'wz' || dir === 'az') return !matches(forms,meaning(other));
+      if (['wz','kz','hz','az'].includes(dir)) return !matches(forms,meaning(other));
       if (dir === 'wr') return !matches(forms,readings(other));
       if (dir === 'zw') return !matches(forms,jaForms(other));
       if (dir === 'kr') return !matches(forms,other.r);
@@ -61,7 +63,7 @@
       if (label && !options.some(x => normalize(x) === normalize(label))) options.push(label);
       if (options.length === 4) break;
     }
-    return {prompt, display, accepts, options: options.length === 4 ? shuffle(options) : [], audio: item.reading ? split(item.reading)[0] : item.ja};
+    return {prompt, display, accepts, options: dir !== 'ar' && options.length === 4 ? shuffle(options) : [], audio: item.reading ? split(item.reading)[0] : item.ja};
   }
   function csvParse(text) {
     const rows = [];
