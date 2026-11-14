@@ -52,9 +52,9 @@
   const sentences=()=>state.sentences||[];
   const audioRate=()=>state.rate??0.75;
   const groupsByLevel=[
-    ['初级 · 认读与听音',[['wz','日语原文 → 中文'],['kz','假名 → 中文'],['hz','日语汉字 → 中文'],['az','听发音 → 中文'],['zw','中文 → 日语']]],
-    ['中级 · 读音与拼写',[['wr','汉字 → 假名读音'],['rkz','假名读音 → 日语汉字'],['ar','听发音写假名']]],
-    ['高级 · 听写与句子',[['aj','听发音写完整日语词'],['sf','听句子填空'],['sd','听写整句']]]
+    ['卡片认读','屏幕上显示什么日文？',[['wz','完整单词','食べる → 选中文'],['kz','只显示假名','たべる → 选中文'],['hz','只显示汉字','食 → 选中文'],['az','听声音','听录音 → 选中文']]],
+    ['默写拼写','屏幕上显示什么提示？',[['zw','看中文写全词','吃 → 写食べる'],['rkz','看假名写汉字','たべる → 写食べる'],['wr','看汉字写假名','食べる → 写たべる']]],
+    ['听写训练','你需要写出什么？',[['aj','写完整单词','听录音 → 写食べる'],['ar','只写假名','听录音 → 写たべる'],['sd','只写句子','听录音 → 写出完整句子'],['sf','听句子填空','听录音 → 写出省略的词']]]
   ];
   const modes={input:'输入答案',choice:'四选一',card:'翻转卡片'};
   const a = (href,label,cls='') => '<a class="btn '+cls+'" href="#'+href+'">'+label+'</a>';
@@ -106,7 +106,7 @@
   function mixFields(p) {
     const saved=p.practice==='single'&&p.dir?[p.dir]:p.mix;
     const selected=Array.isArray(saved)?saved.flatMap(d=>d==='convert'?['wr','rkz']:[d]):['wz','az','zw'];
-    return groupsByLevel.map(([title,entries])=>'<fieldset><legend>'+title+'</legend><div class="check-group">'+entries.map(([id,label])=>'<label class="check"><input type="checkbox" name="mix" value="'+id+'"'+(selected.includes(id)?' checked':'')+'>'+label+'</label>').join('')+'</div></fieldset>').join('');
+    return groupsByLevel.map(([title,guide,entries])=>'<fieldset class="panel type-group"><legend>'+title+'</legend><p class="quiet">'+guide+'</p><div class="check-group type-options">'+entries.map(([id,label,example])=>'<label class="check"><input type="checkbox" name="mix" value="'+id+'"'+(selected.includes(id)?' checked':'')+'><span><b>'+label+'</b><small>'+example+'</small></span></label>').join('')+'</div></fieldset>').join('');
   }
   function setup(kind) {
     const isKana=kind==='kana', p=state.prefs[kind] || {};
@@ -119,7 +119,7 @@
       (isKana?'<div class="grid two">'+field('答题方向',select('dir',Object.fromEntries(directions.map(d=>[d,S.labels[d]])),p.dir))+field('答题模式',select('mode',modes,p.mode))+'</div>':
         '<div class="stack"><p class="quiet">勾选一项专项练习，勾选多项混合出题。句子题使用你导入的例句。</p>'+mixFields(p)+'</div>'+
         field('答题模式',select('mode',{auto:'按题型自动',...modes},p.practice==='mixed'?'auto':p.mode||'auto'))+
-        '<p class="quiet">自动模式下，词义题用四选一，读音和拼写用输入。听写与句子题始终用输入。</p>')+
+        '<p class="quiet">自动模式下，认读用四选一，默写拼写用输入。听写与句子题始终用输入。</p>')+
       field('题目数量',select('count',countOptions,p.count||'10'))+
       '<div class="actions"><button class="btn primary" type="submit">开始抽问 '+icon('arrow')+'</button>'+
       (state.round&&!state.round.done?a('quiz','继续未完成练习'):'')+(isKana?'':a('library','管理词库'))+'</div></form>'+(isKana?'':sentencePanel())+'</div>';
@@ -147,7 +147,7 @@
       const example=sentences().filter(w=>p.lesson.includes(String(w.lesson)));
       const buckets=p.mix.map(dir=>{
         const items=['sf','sd'].includes(dir)?example.filter(s=>dir!=='sf'||s.blank):['wr','rkz','hz'].includes(dir)?kanji:selected;
-        return S.shuffle(items.map(item=>({item,dir,mode:p.mode==='auto'?(['wz','kz','hz','az','zw'].includes(dir)?'choice':'input'):p.mode})));
+        return S.shuffle(items.map(item=>({item,dir,mode:p.mode==='auto'?(['wz','kz','hz','az'].includes(dir)?'choice':'input'):p.mode})));
       });
       if ((p.mix.includes('sf')&&!example.some(s=>s.blank)) || (p.mix.includes('sd')&&!example.length)) return toast('请先为所选课次导入例句。填空题需要填写挖空词。');
       if(buckets.some(b=>!b.length))return toast('所选课次缺少某种题型所需的词条，请调整课次或题型。');
@@ -170,35 +170,16 @@
     clearTimeout(toastTimer);
     toastTimer=setTimeout(()=>{$('toast').textContent='';},4000);
   }
+  const recordingUrls=new Map();
+  const officialAudio='https://oldaudio.sflep.com/User/Listen/DownLoadDetail.aspx?bookId=4269';
   function audioControls(text) {
-    const file=window.STUDY_AUDIO?.[text];
+    const src=recordingUrls.get(text);
     const speed=field('播放语速',select('audio-rate',{'0.6':'0.6× 更慢','0.75':'0.75× 慢速','1':'1× 原速'},audioRate()));
-    if (!file) return '<div class="audio-controls">'+speed+btn('speak',icon('sound')+' 播放设备语音','soft')+'</div>';
-    const src='./audio/'+file+'.wav';
+    const choose='<label class="btn" for="recording-file">选择这道题的录音</label><input id="recording-file" type="file" accept="audio/*,.mp3,.wav,.m4a,.ogg" hidden><a class="btn" href="'+officialAudio+'" target="_blank" rel="noopener">教材官方音频</a>';
+    if (!src) return '<div class="audio-controls"><p class="quiet">这道题还没有录音。可选择手头对应的音频片段。</p><div class="actions audio-alternatives">'+choose+'</div></div>';
     return '<div class="audio-controls">'+speed+'<audio id="quiz-audio" controls preload="metadata" aria-label="播放日语" src="'+src+'"></audio>'+
       '<div class="actions audio-alternatives"><a class="btn" href="'+src+'" target="_blank" rel="noopener">单独打开音频</a>'+
-      btn('speak','使用设备语音')+'</div></div>';
-  }
-  function speak(text) {
-    stopAudio();
-    speakOnDevice(text);
-  }
-  let utterance;
-  function speakOnDevice(text) {
-    if (!('speechSynthesis' in window) || !('SpeechSynthesisUtterance' in window)) return speechStatus('此浏览器无法播放日语语音。');
-    try {
-      const voices=speechSynthesis.getVoices();
-      const voice=voices.find(v=>/^ja(?:[-_]|$)/i.test(v.lang));
-      if (!voice && voices.length) return speechStatus('此设备暂无可用的日语语音。请在系统语音设置中启用日语，或切换练习方向。');
-      utterance=new SpeechSynthesisUtterance(text);
-      utterance.lang='ja-JP';
-      utterance.rate=audioRate()*.88;
-      if(voice) utterance.voice=voice;
-      utterance.onerror=e=>{if(!['canceled','interrupted'].includes(e.error)) speechStatus('日语语音播放失败。请检查设备的日语语音设置。');};
-      speechSynthesis.cancel();
-      speechSynthesis.speak(utterance);
-      speechStatus('');
-    } catch {speechStatus('此浏览器无法播放日语语音。');}
+      choose+'</div></div>';
   }
   function speechStatus(s) {
     speechMessage=s;
@@ -251,7 +232,6 @@
   }
   function stopAudio() {
     $('quiz-audio')?.pause();
-    if (utterance && 'speechSynthesis' in window) { speechSynthesis.cancel(); utterance=null; }
   }
   function step(offset) {
     const r=state.round;
@@ -316,7 +296,7 @@
     return w;
   }
   function sentencePanel() {
-    return '<section class="panel stack"><h2>我的例句</h2><p class="quiet">已导入 '+sentences().length+' 句 · 使用 UTF-8 CSV，填写课次、日语句子、假名读音和中文。填空词及其读音可选。例句由设备日语语音朗读。</p><div class="actions">'+btn('sentence-import','导入例句 CSV','soft')+btn('sentence-template','下载 CSV 模板')+'</div><input id="sentence-file" type="file" accept=".csv,text/csv" hidden></section>';
+    return '<section class="panel stack"><h2>我的例句</h2><p class="quiet">已导入 '+sentences().length+' 句 · 使用 UTF-8 CSV，填写课次、日语句子、假名读音和中文。填空词及其读音可选。听写时可为当前句子选择真人录音。</p><div class="actions">'+btn('sentence-import','导入例句 CSV','soft')+btn('sentence-template','下载 CSV 模板')+'</div><input id="sentence-file" type="file" accept=".csv,text/csv" hidden></section>';
   }
   async function importSentences(input) {
     const file=input.files?.[0];
@@ -411,7 +391,7 @@
     if (player) {
       player.defaultPlaybackRate=audioRate();
       player.playbackRate=audioRate();
-      player.addEventListener('error',()=>speechStatus('音频加载失败。请试试「单独打开音频」或「使用设备语音」。'));
+      player.addEventListener('error',()=>speechStatus('录音加载失败。请试试「单独打开音频」或换一个 MP3 文件。'));
       player.addEventListener('playing',()=>speechStatus(''));
     }
     theme();
@@ -423,6 +403,15 @@
   });
   main.addEventListener('change',e=>{
     if(e.target.name==='active-mode'){state.round.mode=e.target.value;save();render();}
+    if(e.target.id==='recording-file'){
+      const file=e.target.files?.[0];
+      if(file){
+        const text=activeQuestion.audio;
+        if(recordingUrls.has(text))URL.revokeObjectURL(recordingUrls.get(text));
+        recordingUrls.set(text,URL.createObjectURL(file));
+        render();
+      }
+    }
     if(e.target.name==='audio-rate'){
       state.rate=Number(e.target.value);
       const player=$('quiz-audio');
@@ -463,7 +452,6 @@
       const remaining=state.round.items.filter(x=>!x.result||x.result.status==='skip').length;
       if(!remaining||confirm('还有 '+remaining+' 题未答。现在查看成绩吗？'))finish();
     }
-    else if(act==='speak')speak(activeQuestion.audio);
     else if(act==='flip'){current().revealed=!current().revealed;save();render();main.querySelector('[data-act="flip"]')?.focus({preventScroll:true});}
     else if(act==='known')submit('',true,'card');
     else if(act==='unknown')submit('',false,'unknown');
@@ -499,6 +487,5 @@
       save();render();toast('词条已删除。');
     }
   });
-  if('speechSynthesis' in window)speechSynthesis.getVoices();
   render();
 })();

@@ -24,6 +24,7 @@
   function answer(item, dir) {
     return ({kr: item.r && item.r[0],rk:item.ja,kk:item.other,wz:item.zh,kz:item.zh,hz:item.zh,az:item.zh,ar:item.reading && split(item.reading)[0],zw:item.ja,rkz:item.ja,aj:item.ja,wr:item.reading})[dir];
   }
+  const kanjiOnly = text => (text.match(/\p{Script=Han}/gu)||[]).join('');
   function question(item, dir, pool) {
     if (dir === 'sf' || dir === 'sd') {
       const fill = dir === 'sf';
@@ -33,7 +34,7 @@
     }
     const display = answer(item, dir);
     const normalize = ['zw','wr','ar'].includes(dir) ? japanese : normal;
-    const prompt = dir === 'rk' ? item.r[0] : dir === 'zw' ? item.zh : dir === 'az' ? '听音辨义' : dir === 'ar' ? '听完后写下假名' : dir === 'aj' ? '听完后写下日语单词' : ['kz','rkz'].includes(dir) ? item.reading : item.ja;
+    const prompt = dir === 'rk' ? item.r[0] : dir === 'zw' ? item.zh : dir === 'az' ? '听音辨义' : dir === 'ar' ? '听完后写下假名' : dir === 'aj' ? '听完后写下日语单词' : ['kz','rkz'].includes(dir) ? item.reading : dir === 'hz' ? kanjiOnly(item.ja) : item.ja;
     const matches = (a,b) => a.some(x => b.includes(x));
     const readings = word => [word.reading, ...split(word.reading)].map(japanese);
     const jaForms = word => [word.ja, ...split(word.reading), ...(variants[word.ja] || [])].map(japanese);
@@ -53,7 +54,8 @@
       forms = [item,...sameReading].map(w => normal(w.ja));
     }
     if (dir === 'ar') forms = [japanese(display)];
-    if (dir === 'wz' || dir === 'hz') forms = [item,...pool.filter(w => japanese(w.ja) === japanese(item.ja))].flatMap(meaning);
+    if (dir === 'wz') forms = [item,...pool.filter(w => japanese(w.ja) === japanese(item.ja))].flatMap(meaning);
+    if (dir === 'hz') forms = [item,...pool.filter(w => kanjiOnly(w.ja) === prompt)].flatMap(meaning);
     if (dir === 'kz') forms = [item,...pool.filter(w => japanese(w.reading) === japanese(item.reading))].flatMap(meaning);
     if (dir === 'az') forms = [item,...pool.filter(w => japanese(split(w.reading)[0]) === japanese(split(item.reading)[0]))].flatMap(meaning);
     const accepts = value => forms.includes(normalize(value));
