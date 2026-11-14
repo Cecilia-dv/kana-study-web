@@ -52,8 +52,8 @@
   const sentences=()=>state.sentences||[];
   const audioRate=()=>state.rate??0.75;
   const groupsByLevel=[
-    ['初级 · 认读与听音',[['wz','看日文选中文（含假名与汉字）'],['az','听发音选中文'],['zw','看中文选日文']]],
-    ['中级 · 读音与拼写',[['convert','汉字 ↔ 假名互转'],['ar','听发音写假名']]],
+    ['初级 · 认读与听音',[['wz','日语原文 → 中文'],['kz','假名 → 中文'],['hz','日语汉字 → 中文'],['az','听发音 → 中文'],['zw','中文 → 日语']]],
+    ['中级 · 读音与拼写',[['wr','汉字 → 假名读音'],['rkz','假名读音 → 日语汉字'],['ar','听发音写假名']]],
     ['高级 · 听写与句子',[['aj','听发音写完整日语词'],['sf','听句子填空'],['sd','听写整句']]]
   ];
   const modes={input:'输入答案',choice:'四选一',card:'翻转卡片'};
@@ -104,19 +104,22 @@
   const checks=(name,labels,selected)=>'<div class="check-group">'+labels.map(v=>'<label class="check"><input type="checkbox" name="'+name+'" value="'+esc(v)+'"'+(selected.includes(v)?' checked':'')+'>'+esc(name==='lesson'?'第 '+v+' 课':v)+'</label>').join('')+'</div>';
   const countOptions={'5':'5 题','10':'10 题','15':'15 题','20':'20 题','30':'30 题','50':'50 题',all:'全部'};
   function mixFields(p) {
-    const selected=Array.isArray(p.mix)?p.mix:['wz','az','zw'];
+    const saved=p.practice==='single'&&p.dir?[p.dir]:p.mix;
+    const selected=Array.isArray(saved)?saved.flatMap(d=>d==='convert'?['wr','rkz']:[d]):['wz','az','zw'];
     return groupsByLevel.map(([title,entries])=>'<fieldset><legend>'+title+'</legend><div class="check-group">'+entries.map(([id,label])=>'<label class="check"><input type="checkbox" name="mix" value="'+id+'"'+(selected.includes(id)?' checked':'')+'>'+label+'</label>').join('')+'</div></fieldset>').join('');
   }
   function setup(kind) {
     const isKana=kind==='kana', p=state.prefs[kind] || {};
     const groups=['清音','浊音','半浊音','拗音'], scripts=['平假名','片假名'];
     const practiceLessons=[...new Set([...lessons(),...sentences().map(s=>s.lesson)])].sort((a,b)=>a-b);
-    const directions=isKana?['kr','rk','kk']:['wz','kz','hz','zw','wr','rkz','az','ar','aj'];
+    const directions=['kr','rk','kk'];
     return '<div class="narrow">'+pageHead(isKana?'かな · KANA':'ことば · VOCABULARY',isKana?'假名抽问':'单词抽问',isKana?'选择要练的文字、音类和答题方向。':'《新时代大学日语 1（学生用书）》')+
       '<form id="setup" class="panel setup" data-kind="'+kind+'">'+
       (isKana?'<fieldset><legend>文字</legend>'+checks('script',scripts,Array.isArray(p.script)?p.script:scripts)+'</fieldset><fieldset><legend>音类</legend>'+checks('group',groups,Array.isArray(p.group)?p.group:groups)+'</fieldset>':'<fieldset><legend>课程</legend>'+checks('lesson',practiceLessons.map(String),Array.isArray(p.lesson)?p.lesson:practiceLessons.map(String))+'</fieldset>')+
-      (isKana?'':field('练习方式',select('practice',{mixed:'组合抽问',single:'单一题型'},p.practice||'mixed'))+'<div id="mix-settings" class="stack" hidden><p class="quiet">勾选想混练的题型。初级建议选 2–3 项，句子题使用你导入的例句。</p>'+mixFields(p)+'</div>')+
-      '<div class="grid two" id="single-settings">'+field('答题方向',select('dir',Object.fromEntries(directions.map(d=>[d,S.labels[d]])),p.dir))+field('答题模式',select('mode',modes,p.mode))+'</div>'+
+      (isKana?'<div class="grid two">'+field('答题方向',select('dir',Object.fromEntries(directions.map(d=>[d,S.labels[d]])),p.dir))+field('答题模式',select('mode',modes,p.mode))+'</div>':
+        '<div class="stack"><p class="quiet">勾选一项专项练习，勾选多项混合出题。句子题使用你导入的例句。</p>'+mixFields(p)+'</div>'+
+        field('答题模式',select('mode',{auto:'按题型自动',...modes},p.practice==='mixed'?'auto':p.mode||'auto'))+
+        '<p class="quiet">自动模式下，词义题用四选一，读音和拼写用输入。听写与句子题始终用输入。</p>')+
       field('题目数量',select('count',countOptions,p.count||'10'))+
       '<div class="actions"><button class="btn primary" type="submit">开始抽问 '+icon('arrow')+'</button>'+
       (state.round&&!state.round.done?a('quiz','继续未完成练习'):'')+(isKana?'':a('library','管理词库'))+'</div></form>'+(isKana?'':sentencePanel())+'</div>';
@@ -136,17 +139,18 @@
     const scope=isKana?['script','group']:['lesson'];
     scope.forEach(k=>p[k]=data.getAll(k));
     if (scope.some(k=>!p[k].length)) return toast('请至少选择一个练习范围。');
-    if (!isKana && p.practice==='mixed') {
+    if (!isKana) {
       p.mix=data.getAll('mix');
       if(!p.mix.length)return toast('请至少勾选一种题型。');
       const selected=words().filter(w=>p.lesson.includes(String(w.lesson)));
       const kanji=selected.filter(w=>/[\p{Script=Han}]/u.test(w.ja));
       const example=sentences().filter(w=>p.lesson.includes(String(w.lesson)));
-      const buckets=p.mix.flatMap(d=>d==='convert'?['wr','rkz']:[d]).map(dir=>{
-        const items=['sf','sd'].includes(dir)?example.filter(s=>dir!=='sf'||s.blank):['wr','rkz'].includes(dir)?kanji:selected;
-        return S.shuffle(items.map(item=>({item,dir,mode:['wz','az','zw'].includes(dir)?'choice':'input'})));
+      const buckets=p.mix.map(dir=>{
+        const items=['sf','sd'].includes(dir)?example.filter(s=>dir!=='sf'||s.blank):['wr','rkz','hz'].includes(dir)?kanji:selected;
+        return S.shuffle(items.map(item=>({item,dir,mode:p.mode==='auto'?(['wz','kz','hz','az','zw'].includes(dir)?'choice':'input'):p.mode})));
       });
       if ((p.mix.includes('sf')&&!example.some(s=>s.blank)) || (p.mix.includes('sd')&&!example.length)) return toast('请先为所选课次导入例句。填空题需要填写挖空词。');
+      if(buckets.some(b=>!b.length))return toast('所选课次缺少某种题型所需的词条，请调整课次或题型。');
       const list=[];
       while(buckets.some(b=>b.length)) {
         for(const bucket of S.shuffle(buckets))if(bucket.length)list.push(bucket.pop());
@@ -154,10 +158,9 @@
       state.prefs[kind]=p;
       return launch(kind,list,'input',p.count,true);
     }
-    const items=isKana?S.kana.filter(k=>p.script.includes(k.script)&&p.group.includes(k.group)):
-      words().filter(w=>p.lesson.includes(String(w.lesson))&&(!['wr','hz','ar','rkz'].includes(p.dir)||/[\p{Script=Han}]/u.test(w.ja)));
+    const items=S.kana.filter(k=>p.script.includes(k.script)&&p.group.includes(k.group));
     state.prefs[kind]=p;
-    launch(kind,items.map(item=>({item,dir:p.dir})),['ar','aj'].includes(p.dir)?'input':p.mode,p.count);
+    launch(kind,items.map(item=>({item,dir:p.dir})),p.mode,p.count);
   }
   const current=()=>state.round.items[state.round.index];
   const question=q=>S.question(q.item,q.dir,q.item.script?S.kana:[q.item,...words().filter(w=>w.id!==q.item.id)]);
@@ -412,19 +415,6 @@
       player.addEventListener('playing',()=>speechStatus(''));
     }
     theme();
-    syncSetupMode();
-  }
-  function syncSetupMode() {
-    const form=$('setup');
-    if (!form) return;
-    const mixed=form.elements.practice?.value==='mixed';
-    const section=$('mix-settings');
-    if(section)section.hidden=!mixed;
-    $('single-settings').hidden=mixed;
-    form.elements.dir.disabled=mixed;
-    const dictation=['ar','aj'].includes(form.elements.dir.value);
-    if (dictation) form.elements.mode.value='input';
-    form.elements.mode.disabled=mixed||dictation;
   }
   window.addEventListener('hashchange',()=>{stopAudio();speechMessage='';render();window.scrollTo(0,0);});
   $('theme').addEventListener('click',()=>{state.theme=document.documentElement.dataset.theme==='dark'?'light':'dark';save();theme();});
@@ -432,7 +422,6 @@
     if(e.target.id==='word-search'){libraryQuery=e.target.value;$('word-list').innerHTML=wordList();}
   });
   main.addEventListener('change',e=>{
-    if(['dir','practice'].includes(e.target.name))syncSetupMode();
     if(e.target.name==='active-mode'){state.round.mode=e.target.value;save();render();}
     if(e.target.name==='audio-rate'){
       state.rate=Number(e.target.value);
