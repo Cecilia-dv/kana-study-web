@@ -1,4 +1,16 @@
 *{box-sizing:border-box}
+:root[data-theme=sepia]{--bg:#eee0c3;--paper:#f9eed7;--ink:#3b2d21;--muted:#68533d;--line:#dccaab;--pink:#e9d2b0;--pink2:#f1e2c6;--accent:#79462f;--accent-strong:#79462f}
+:root[data-theme=sage]{--bg:#dde8dc;--paper:#f0f6ef;--ink:#26382b;--muted:#4d6252;--line:#c5d6c6;--pink:#cde0cf;--pink2:#e4eee3;--accent:#365d47;--accent-strong:#365d47}
+.theme-picker{position:relative;flex:none;z-index:3}
+.theme-picker summary{cursor:pointer;font-size:24px;list-style:none}
+.theme-picker summary::-webkit-details-marker{display:none}
+.theme-picker summary:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+.theme-picker .theme-options{position:absolute;inset-block-start:calc(100% + 8px);inset-inline-end:0;width:184px;padding:8px;border:1px solid var(--line);border-radius:14px;background:var(--paper);box-shadow:0 8px 30px #0002}
+.theme-picker legend{float:left;width:100%;padding:3px 8px;margin:0}
+.theme-picker label{clear:both;display:flex;align-items:center;gap:8px;min-height:44px;padding:4px 8px;border-radius:8px;cursor:pointer}
+.theme-picker label:hover,.theme-picker label:has(input:checked){background:var(--pink2)}
+.theme-picker input{margin:0;accent-color:var(--accent)}
+.theme-swatch{width:17px;height:17px;border-radius:50%;background:var(--swatch);border:1px solid #808080}
 :root{color-scheme:light;--bg:#faf7f2;--paper:#fffdf9;--ink:#29231f;--muted:#6e625b;--line:#e9dfd5;--pink:#f5e3e5;--pink2:#f9eeed;--accent:#934c5a;--accent-strong:#864451;--button-ink:white;--green:#3e6551;--greenbg:#e8f1e9;--bad:#9c3a44;--shadow:0 8px 24px rgba(72,48,33,.045)}
 :root[data-theme=dark]{color-scheme:dark;--bg:#211c1b;--paper:#2c2524;--ink:#f7eee8;--muted:#cab7b0;--line:#483a37;--pink:#4d343a;--pink2:#37272b;--accent:#f0adba;--accent-strong:#efadb9;--button-ink:#271a1e;--green:#b7dec0;--greenbg:#303f33;--bad:#ffadba;--shadow:none}
 body{margin:0;color:var(--ink);background:var(--bg);font:15px/1.6 -apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif}
