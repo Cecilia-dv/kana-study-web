@@ -5,12 +5,14 @@
   const main = $('main');
   const key = 'kana-notebook-v1';
   const themeColors = {light:'#faf7f2',sepia:'#eee0c3',sage:'#dde8dc',dark:'#211c1b'};
+  const fontSizes = ['small','normal','large','extra-large'];
   const fresh = () => ({version:1,theme:'',sentences:[],rate:0.75,edits:{},removed:[],attempts:[],dismissed:{},round:null,prefs:{}});
   const own = (o,k) => Object.prototype.hasOwnProperty.call(o,k);
   const object = x => x && typeof x === 'object' && !Array.isArray(x);
   const itemValid = x => object(x) && ['id','ja','reading','zh','pos'].every(k => typeof x[k] === 'string') && x.ja.trim() && x.zh.trim() && Number.isSafeInteger(x.lesson) && x.lesson > 0 && /^[ぁ-ゖァ-ヺー・/／\s]+$/u.test(x.reading);
   function valid(d) {
     return object(d) && d.version === 1 && typeof d.theme==='string' && (d.theme==='' || own(themeColors,d.theme))
+      && (d.fontSize===undefined || fontSizes.includes(d.fontSize))
       && (d.sentences===undefined || (Array.isArray(d.sentences) && d.sentences.every(s=>itemValid(s)&&typeof s.blank==='string'&&s.ja.includes(s.blank)&&typeof s.blankReading==='string'))) && (d.rate===undefined || [0.6,0.75,1].includes(d.rate))
       && object(d.edits) && Object.entries(d.edits).every(([id,w])=>itemValid(w) && id===w.id && /^(w|u)-/.test(id))
       && Array.isArray(d.removed) && d.removed.every(x=>typeof x==='string')
@@ -381,9 +383,12 @@
   }
   const systemTheme=matchMedia('(prefers-color-scheme: dark)');
   const themePicker=$('theme-picker');
+  const fontSizePicker=$('reading-font-size');
   function theme() {
     const mode=state.theme||(systemTheme.matches?'dark':'light');
     document.documentElement.dataset.theme=mode;
+    document.documentElement.dataset.fontSize=state.fontSize||'normal';
+    fontSizePicker.value=state.fontSize||'normal';
     document.querySelector('meta[name="theme-color"]').content=themeColors[mode];
     for(const option of themePicker.querySelectorAll('input')) option.checked=option.value===state.theme;
   }
@@ -414,7 +419,9 @@
   }
   window.addEventListener('hashchange',()=>{stopAudio();speechMessage='';render();window.scrollTo(0,0);});
   themePicker.addEventListener('change',event=>{
-    state.theme=event.target.value;
+    if(event.target===fontSizePicker) state.fontSize=fontSizePicker.value;
+    else if(event.target.name==='reading-theme') state.theme=event.target.value;
+    else return;
     save();
     theme();
   });

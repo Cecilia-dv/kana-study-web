@@ -7,18 +7,18 @@
   <meta name="theme-color" content="#faf7f2">
   <title>かな日和 · 日语练习册</title>
   <link rel="icon" href="./icon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="./style.css?v=9">
+  <link rel="stylesheet" href="./style.css?v=11">
   <script defer src="./data/kana.js"></script>
   <script defer src="./data/words.js?v=10"></script>
   <script defer src="./engine.js?v=7"></script>
-  <script defer src="./app.js?v=10"></script>
+  <script defer src="./app.js?v=11"></script>
 </head>
 <body>
   <header class="top"><div class="shell header-inner">
     <a class="brand" href="#home"><span class="brand-mark" lang="ja">あ</span><span><b lang="ja">かな日和</b><small>日语练习册</small></span></a>
     <nav id="desktop-nav" aria-label="主导航"></nav>
     <details id="theme-picker" class="theme-picker">
-      <summary class="icon-button" id="theme" aria-label="阅读背景" title="阅读背景">◐</summary>
+      <summary class="icon-button" id="theme" aria-label="阅读设置" title="阅读设置">◐</summary>
       <fieldset class="theme-options">
         <legend>阅读背景</legend>
         <label><input type="radio" name="reading-theme" value="light"><span class="theme-swatch" style="--swatch:#faf7f2"></span>浅色</label>
@@ -26,6 +26,14 @@
         <label><input type="radio" name="reading-theme" value="sage"><span class="theme-swatch" style="--swatch:#dde8dc"></span>浅绿纸</label>
         <label><input type="radio" name="reading-theme" value="dark"><span class="theme-swatch" style="--swatch:#211c1b"></span>夜间</label>
         <label><input type="radio" name="reading-theme" value=""><span class="theme-swatch" style="--swatch:linear-gradient(135deg,#faf7f2 50%,#211c1b 50%)"></span>跟随系统</label>
+        <label class="font-setting" for="reading-font-size">字号
+          <select id="reading-font-size">
+            <option value="small">小</option>
+            <option value="normal">标准</option>
+            <option value="large">大</option>
+            <option value="extra-large">特大</option>
+          </select>
+        </label>
       </fieldset>
     </details>
   </div></header>
