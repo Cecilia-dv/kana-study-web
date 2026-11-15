@@ -51,6 +51,9 @@
   const routes={home:'首页',kana:'假名',words:'单词',review:'错题本',stats:'学习统计'};
   const sentences=()=>state.sentences||[];
   const audioRate=()=>state.rate??0.75;
+  // Keep audio support available for a later release.
+  const audioEnabled=false;
+  const directionEnabled=dir=>audioEnabled||!['az','ar','aj','sd','sf'].includes(dir);
   const groupsByLevel=[
     ['卡片认读','屏幕上显示什么日文？',[['wz','完整单词','食べる → 选中文'],['kz','只显示假名','たべる → 选中文'],['hz','只显示汉字','食 → 选中文'],['az','听声音','听录音 → 选中文']]],
     ['默写拼写','屏幕上显示什么提示？',[['zw','看中文写全词','吃 → 写食べる'],['rkz','看假名写汉字','たべる → 写食べる'],['wr','看汉字写假名','食べる → 写たべる']]],
@@ -77,6 +80,10 @@
       entries.set(record.id,{item:live.get(record.id),dir:record.dir,count:(entries.get(record.id)?.count||0)+1,time:record.time});
     }
     return [...entries.values()].sort((a,b)=>b.count-a.count||b.time-a.time);
+  }
+  function retryEntries(rows) {
+    return rows.flatMap(({item,dir,mode})=>directionEnabled(dir)?[{item,dir,mode}]:
+      ['sd','sf'].includes(dir)?[]:[{item,dir:'wz',mode}]);
   }
   function metrics() {
     const today=day(Date.now());
@@ -105,21 +112,24 @@
   const countOptions={'5':'5 题','10':'10 题','15':'15 题','20':'20 题','30':'30 题','50':'50 题',all:'全部'};
   function mixFields(p) {
     const saved=p.practice==='single'&&p.dir?[p.dir]:p.mix;
-    const selected=Array.isArray(saved)?saved.flatMap(d=>d==='convert'?['wr','rkz']:[d]):['wz','az','zw'];
-    return groupsByLevel.map(([title,guide,entries])=>'<fieldset class="panel type-group"><legend>'+title+'</legend><p class="quiet">'+guide+'</p><div class="check-group type-options">'+entries.map(([id,label,example])=>'<label class="check"><input type="checkbox" name="mix" value="'+id+'"'+(selected.includes(id)?' checked':'')+'><span><b>'+label+'</b><small>'+example+'</small></span></label>').join('')+'</div></fieldset>').join('');
+    const available=groupsByLevel.map(([title,guide,entries])=>[title,guide,entries.filter(([dir])=>directionEnabled(dir))]).filter(([, ,entries])=>entries.length);
+    const allowed=new Set(available.flatMap(([, ,entries])=>entries.map(([dir])=>dir)));
+    const selected=Array.isArray(saved)?saved.flatMap(d=>d==='convert'?['wr','rkz']:[d]).filter(d=>allowed.has(d)):[];
+    if(!selected.length)selected.push(...['wz','az','zw'].filter(d=>allowed.has(d)));
+    return available.map(([title,guide,entries])=>'<fieldset class="panel type-group"><legend>'+title+'</legend><p class="quiet">'+guide+'</p><div class="check-group type-options">'+entries.map(([id,label,example])=>'<label class="check"><input type="checkbox" name="mix" value="'+id+'"'+(selected.includes(id)?' checked':'')+'><span><b>'+label+'</b><small>'+example+'</small></span></label>').join('')+'</div></fieldset>').join('');
   }
   function setup(kind) {
     const isKana=kind==='kana', p=state.prefs[kind] || {};
     const groups=['清音','浊音','半浊音','拗音'], scripts=['平假名','片假名'];
-    const practiceLessons=[...new Set([...lessons(),...sentences().map(s=>s.lesson)])].sort((a,b)=>a-b);
+    const practiceLessons=[...new Set([...lessons(),...(audioEnabled?sentences().map(s=>s.lesson):[])])].sort((a,b)=>a-b);
     const directions=['kr','rk','kk'];
     return '<div class="narrow">'+pageHead(isKana?'かな · KANA':'ことば · VOCABULARY',isKana?'假名抽问':'单词抽问',isKana?'选择要练的文字、音类和答题方向。':'《新时代大学日语 1（学生用书）》')+
       '<form id="setup" class="panel setup" data-kind="'+kind+'">'+
       (isKana?'<fieldset><legend>文字</legend>'+checks('script',scripts,Array.isArray(p.script)?p.script:scripts)+'</fieldset><fieldset><legend>音类</legend>'+checks('group',groups,Array.isArray(p.group)?p.group:groups)+'</fieldset>':'<fieldset><legend>课程</legend>'+checks('lesson',practiceLessons.map(String),Array.isArray(p.lesson)?p.lesson:practiceLessons.map(String))+'</fieldset>')+
       (isKana?'<div class="grid two">'+field('答题方向',select('dir',Object.fromEntries(directions.map(d=>[d,S.labels[d]])),p.dir))+field('答题模式',select('mode',modes,p.mode))+'</div>':
-        '<div class="stack"><p class="quiet">勾选一项专项练习，勾选多项混合出题。句子题使用你导入的例句。</p>'+mixFields(p)+'</div>'+
+        '<div class="stack"><p class="quiet">勾选一项专项练习，勾选多项混合出题。'+(audioEnabled?'句子题使用你导入的例句。':'')+'</p>'+mixFields(p)+'</div>'+
         field('答题模式',select('mode',{auto:'按题型自动',...modes},p.practice==='mixed'?'auto':p.mode||'auto'))+
-        '<p class="quiet">自动模式下，认读用四选一，默写拼写用输入。听写与句子题始终用输入。</p>')+
+        '<p class="quiet">自动模式下，认读用四选一，默写拼写用输入。'+(audioEnabled?'听写与句子题始终用输入。':'')+'</p>')+
       field('题目数量',select('count',countOptions,p.count||'10'))+
       '<div class="actions"><button class="btn primary" type="submit">开始抽问 '+icon('arrow')+'</button>'+
       (state.round&&!state.round.done?a('quiz','继续未完成练习'):'')+(isKana?'':a('library','管理词库'))+'</div></form>'+(isKana?'':sentencePanel())+'</div>';
@@ -140,7 +150,7 @@
     scope.forEach(k=>p[k]=data.getAll(k));
     if (scope.some(k=>!p[k].length)) return toast('请至少选择一个练习范围。');
     if (!isKana) {
-      p.mix=data.getAll('mix');
+      p.mix=data.getAll('mix').filter(directionEnabled);
       if(!p.mix.length)return toast('请至少勾选一种题型。');
       const selected=words().filter(w=>p.lesson.includes(String(w.lesson)));
       const kanji=selected.filter(w=>/[\p{Script=Han}]/u.test(w.ja));
@@ -199,6 +209,11 @@
     const fixedMode=dictation||q.mode;
     const mode=dictation?'input':q.mode||r.mode, pending=!result||result.status==='skip';
     activeQuestion=nextQuestion;
+    if(pending&&!directionEnabled(q.dir)) {
+      return '<div class="narrow">'+pageHead('练习','第 '+(r.index+1)+' / '+r.items.length+' 题','')+
+        '<section class="panel empty"><h2>这道听力题暂不可用</h2><p class="sub">录音功能已暂停，你可以跳过这道题。</p></section>'+
+        '<div class="actions quiz-controls">'+btn('prev','上一题','',!r.index)+btn('next',r.index===r.items.length-1?'查看成绩':'跳过此题','primary')+btn('finish','结束本轮')+'</div></div>';
+    }
     if (mode==='choice' && (!q.options || (q.options.length && q.options.filter(nextQuestion.accepts).length!==1))) {q.options=nextQuestion.options; save();}
     const display=esc(nextQuestion.display), prompt=esc(nextQuestion.prompt);
     const lang=['zw','az','ar','aj','sd','rk'].includes(q.dir)?'':' lang="ja"';
@@ -217,7 +232,7 @@
       (fixedMode?'<span class="quiet">'+modes[mode]+'</span>':'<label><span class="quiet">答题模式</span> '+select('active-mode',modes,mode)+'</label>')+'</div>'+
       meter(r.items.filter(x=>x.result&&x.result.status!=='skip').length,r.items.length)+
       '<section class="panel quiz-card"><span class="chip">'+prefix+'</span><p class="quiet">'+S.labels[q.dir]+'</p>'+face+
-      (showSound?audioControls(nextQuestion.audio):'')+
+      (audioEnabled&&showSound?audioControls(nextQuestion.audio):'')+
       '<p id="speech-status" role="status" class="notice" '+(!speechMessage?'hidden':'')+'>'+esc(speechMessage)+'</p>'+
       '<div class="answer-zone">'+feedback+body+'</div></section>'+
       '<div class="actions quiz-controls">'+btn('prev','上一题','',!r.index)+(pending?btn('next','跳过')+btn('unknown','不认识 · 看答案','soft'):(result.status==='wrong'&&result.value&&result.source==='input'?btn('override','接受我的答案'):'')+btn('next',r.index===r.items.length-1?'查看成绩':'下一题','primary'))+btn('finish','结束本轮')+'</div></div>';
@@ -251,12 +266,12 @@
     return '<div class="narrow">'+pageHead('おつかれさま','本轮成绩','已答 '+answered.length+' 题 · 跳过或未答 '+missed+' 题')+
       '<div class="grid three">'+metric(percentage(answered.length-wrong.length,answered.length),'正确率')+metric(answered.length-wrong.length,'答对')+metric(wrong.length,'错题')+'</div>'+
       '<div class="section-title"><h2>本轮错题</h2></div><div class="panel">'+(wrong.length?'<ul class="list">'+wrong.map(q=>'<li><b lang="ja">'+esc(q.item.ja)+'</b><br><small>'+esc(question(q).display)+'</small></li>').join('')+'</ul>':'<p class="quiet">本轮没有错题。</p>')+'</div>'+
-      '<div class="actions quiz-controls">'+(wrong.length?btn('retry','重练本轮错题','primary'):'')+a(r.kind==='review'?'review':r.kind,'返回练习设置')+a('home','返回首页')+'</div></div>';
+      '<div class="actions quiz-controls">'+(retryEntries(wrong).length?btn('retry','重练本轮错题','primary'):'')+a(r.kind==='review'?'review':r.kind,'返回练习设置')+a('home','返回首页')+'</div></div>';
   }
   function review() {
     const rows=mistakes();
     return '<div class="narrow">'+pageHead('ふくしゅう · REVIEW','错题本','把容易忘记的内容再练一遍。')+
-      (rows.length?'<form id="review-form" class="panel setup"><div class="grid two">'+field('答题模式',select('mode',modes,'input'))+field('题目数量',select('count',countOptions,'all'))+'</div><div class="actions"><button class="btn primary">优先练习高频错题 '+icon('arrow')+'</button></div></form><div class="section-title"><h2>待复习</h2><small>'+rows.length+' 项</small></div><div class="panel"><ul class="list">'+rows.map(({item,count})=>'<li class="row"><div class="word-info"><div class="word-title" lang="ja">'+esc(item.ja)+'</div><small>'+esc(item.script?item.script+' · '+item.r[0]:item.reading+' · '+item.zh)+' · 错 '+count+' 次</small></div>'+btn('master:'+item.id,'已掌握')+'</li>').join('')+'</ul></div>':'<div class="panel empty"><h2>错题本是空的</h2><p class="sub">答错或选择「不认识」时，题目会出现在这里。</p></div>')+'</div>';
+      (rows.length?'<form id="review-form" class="panel setup"><div class="grid two">'+field('答题模式',select('mode',modes,'input'))+field('题目数量',select('count',countOptions,'all'))+'</div><div class="actions"><button class="btn primary"'+(!retryEntries(rows).length?' disabled':'')+'>优先练习高频错题 '+icon('arrow')+'</button></div></form><div class="section-title"><h2>待复习</h2><small>'+rows.length+' 项</small></div><div class="panel"><ul class="list">'+rows.map(({item,count})=>'<li class="row"><div class="word-info"><div class="word-title" lang="ja">'+esc(item.ja)+'</div><small>'+esc(item.script?item.script+' · '+item.r[0]:item.reading+' · '+item.zh)+' · 错 '+count+' 次</small></div>'+btn('master:'+item.id,'已掌握')+'</li>').join('')+'</ul></div>':'<div class="panel empty"><h2>错题本是空的</h2><p class="sub">答错或选择「不认识」时，题目会出现在这里。</p></div>')+'</div>';
   }
   function stats() {
     const m=metrics();
@@ -296,7 +311,7 @@
     return w;
   }
   function sentencePanel() {
-    return '<section class="panel stack"><h2>我的例句</h2><p class="quiet">已导入 '+sentences().length+' 句 · 使用 UTF-8 CSV，填写课次、日语句子、假名读音和中文。填空词及其读音可选。听写时可为当前句子选择真人录音。</p><div class="actions">'+btn('sentence-import','导入例句 CSV','soft')+btn('sentence-template','下载 CSV 模板')+'</div><input id="sentence-file" type="file" accept=".csv,text/csv" hidden></section>';
+    return '<section class="panel stack"><h2>我的例句</h2><p class="quiet">已导入 '+sentences().length+' 句 · 使用 UTF-8 CSV，填写课次、日语句子、假名读音和中文。填空词及其读音可选。'+(audioEnabled?'听写时可为当前句子选择真人录音。':'')+'</p><div class="actions">'+btn('sentence-import','导入例句 CSV','soft')+btn('sentence-template','下载 CSV 模板')+'</div><input id="sentence-file" type="file" accept=".csv,text/csv" hidden></section>';
   }
   async function importSentences(input) {
     const file=input.files?.[0];
@@ -438,7 +453,7 @@
     }
     if(f.id==='review-form'){
       const d=new FormData(f);
-      launch('review',mistakes().map(({item,dir})=>({item,dir})),d.get('mode'),d.get('count'),true);
+      launch('review',retryEntries(mistakes()),d.get('mode'),d.get('count'),true);
     }
   });
   main.addEventListener('click',e=>{
@@ -464,7 +479,7 @@
       const record=state.attempts.find(x=>x.key===r.id+'-'+r.index);
       if(record){record.ok=true;current().result.status='correct';save();render();}
     }
-    else if(act==='retry')launch('review',state.round.items.filter(q=>q.result?.status==='wrong').map(({item,dir,mode})=>({item,dir,mode})),state.round.mode,'all');
+    else if(act==='retry')launch('review',retryEntries(state.round.items.filter(q=>q.result?.status==='wrong')),state.round.mode,'all');
     else if(act.startsWith('master:')){state.dismissed[id]=Date.now();save();render();}
     else if(act==='backup')download('kana-notebook-backup.json',JSON.stringify(state,null,2),'application/json');
     else if(act==='sentence-import')$('sentence-file').click();
