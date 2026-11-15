@@ -104,7 +104,7 @@
     return '<section class="hero"><div><p class="eyebrow">まいにち日本語</p><h1>今天，练一点日语</h1><p class="sub">从一个假名、一个单词开始。按照自己的节奏，把学过的日语慢慢记牢。</p><div class="actions">'+(resume?a('quiz','继续上次练习 '+icon('arrow'),'primary'):a('kana','开始练习 '+icon('arrow'),'primary'))+'</div></div><div class="art" aria-hidden="true"><div class="art-grid"></div><div class="art-disc"></div><span class="petal one">✧</span><span class="petal two">✦</span><div class="tile left" lang="ja">あ<small>HIRAGANA</small></div><div class="tile right" lang="ja">カ<small>KATAKANA</small></div></div></section>'+
       '<div class="section-title"><h2>练习入口</h2><small>自选范围与题型</small></div><div class="grid two keep">'+
       '<a href="#kana" class="panel practice-link"><span class="badge" lang="ja">あ</span><span><h3>假名抽问</h3><small>平假名、片假名与罗马音</small></span>'+icon('arrow')+'</a>'+
-      '<a href="#words" class="panel practice-link"><span class="badge green" lang="ja">語</span><span><h3>单词抽问</h3><small>教材第 3–6 课 · '+words().length+' 个词条</small></span>'+icon('arrow')+'</a></div>'+
+      '<a href="#words" class="panel practice-link"><span class="badge green" lang="ja">語</span><span><h3>单词抽问</h3><small>教材第 3–10 课 · '+words().length+' 个词条</small></span>'+icon('arrow')+'</a></div>'+
       '<div class="section-title"><h2>今日学习</h2><a class="quiet" href="#stats">查看统计 '+icon('arrow')+'</a></div><div class="grid three">'+metric(m.count,'今日答题')+metric(m.rate,'今日正确率')+metric(m.streak+' 天','连续学习')+'</div>';
   }
   const select = (name, options, current) => '<select name="'+name+'">'+Object.entries(options).map(([v,l])=>'<option value="'+esc(v)+'"'+(String(current)===v?' selected':'')+'>'+esc(l)+'</option>').join('')+'</select>';
